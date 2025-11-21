@@ -1,35 +1,39 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora PalletParking vs Tradicional</title>
-    https://cdn.jsdelivr.net/npm/chart.js</script>
-    <style>
+    <title>Simulación PalletParking vs Tradicional</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="assets/style.css">
+<style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f4f4f4; }
-        .container { max-width: 700px; margin: auto; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .container { max-width: 900px; margin: auto; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 0px rgba(0,0,0,0.1); }
         h2 { text-align: center; color: #0078D7; }
         label { display: block; margin-top: 10px; font-weight: bold; }
-        padding: 8px; margin-top: 5px; }
+        input { width: 100%; padding: 8px; margin-top: 5px; }
         button { margin-top: 15px; width: 100%; padding: 10px; background: #0078D7; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
         button:hover { background: #005fa3; }
         .result { margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px; }
-        canvas { margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+        th { background: #0078D7; color: white; }
+        canvas { margin-top: 30px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>Comparador de Costos</h2>
+        <h2>Simulación PalletParking vs Tradicional</h2>
         <label for="pallets">Cantidad de pallets:</label>
         <input type="number" id="pallets" min="1" required>
 
-        <label for="meses">Meses de permanencia:</label>
+        <label for="meses">Meses de operación:</label>
         <input type="number" id="meses" min="1" max="12" required>
 
-        <button onclick="calcular()">Calcular</button>
+        <button onclick="simular()">Simular</button>
 
         <div class="result" id="resultado"></div>
+        <div id="tabla"></div>
         <canvas id="costChart" width="400" height="200"></canvas>
     </div>
 
@@ -40,83 +44,88 @@
         // Obtener valor UF desde API
         fetch('https://mindicador.cl/api/uf')
             .then(response => response.json())
-            .then(data => {
-                ufValor = data.serie[0].valor;
-                console.log("Valor UF actualizado:", ufValor);
-            })
+            .then(data => { ufValor = data.serie[0].valor; })
             .catch(error => console.error("Error al obtener UF:", error));
 
-        function calcular() {
-            const pallets = parseFloat(document.getElementById('pallets').value);
-            const meses = parseFloat(document.getElementById('meses').value);
+        function simular() {
+            const pallets = parseInt(document.getElementById('pallets').value);
+            const meses = parseInt(document.getElementById('meses').value);
 
             if (isNaN(pallets) || isNaN(meses) || pallets <= 0 || meses <= 0) {
                 document.getElementById('resultado').innerHTML = "<p style='color:red;'>Ingrese valores válidos.</p>";
                 return;
             }
 
-            // Parámetros del modelo
-            const ufAlmacenajePP = 0.195; // UF por pallet por mes (PalletParking)
-            const ufAlmacenajeTrad = 0.24; // UF por pallet por mes (Tradicional)
-            const ufMovimiento = 0.115; // UF por movimiento (in/out)
-            const tasaInicial = 0.09;   // 9% stock inicial
-            const palletsPorM2 = 2.1;   // pallets por m²
+            const ufAlmacenajePP = 0.195;
+            const ufAlmacenajeTrad = 0.24;
+            const ufMovimiento = 0.115;
+            const tasaInicial = 0.09;
 
-            // Cálculos comunes
-            const stockInicial = pallets * tasaInicial;
-            const stockFinal = pallets;
-            const almacenajePromedio = (stockInicial + stockFinal) / 2;
+            let movimientos = [];
+            let stock = 0;
+            for (let mes = 1; mes <= meses; mes++) {
+                let entradas = 0, salidas = 0;
+                if (mes < meses) {
+                    entradas = Math.floor(Math.random() * (pallets / meses));
+                    salidas = Math.floor(Math.random() * (pallets / meses));
+                    stock += entradas - salidas;
+                    if (stock < 0) stock = 0;
+                } else {
+                    entradas = 0;
+                    salidas = stock;
+                    stock = 0;
+                }
+                movimientos.push({ mes, entradas, salidas, stockFinal: stock });
+            }
 
-            // PalletParking
-            const costoAlmacenajePP = almacenajePromedio * ufAlmacenajePP * meses;
-            const costoMovimientosPP = pallets * ufMovimiento * 2;
-            const costoTotalPP = costoAlmacenajePP + costoMovimientosPP;
+            let resumen = [];
+            let stockActual = pallets * tasaInicial;
+            let costoPP_UF = 0, costoTrad_UF = 0, costoMov_UF = 0;
 
-            // Tradicional
-            const costoAlmacenajeTrad = almacenajePromedio * ufAlmacenajeTrad * meses;
-            const costoMovimientosTrad = pallets * ufMovimiento * 2;
-            const costoTotalTrad = costoAlmacenajeTrad + costoMovimientosTrad;
+            movimientos.forEach(m => {
+                let stockFinal = stockActual + m.entradas - m.salidas;
+                let almacenajePromedio = (stockActual + stockFinal) / 2;
+                resumen.push({ mes: m.mes, entradas: m.entradas, salidas: m.salidas, stockFinal: stockFinal, promedio: almacenajePromedio });
 
-            // Conversión a CLP
-            const costoPP_CLP = costoTotalPP * ufValor;
-            const costoTrad_CLP = costoTotalTrad * ufValor;
+                costoPP_UF += almacenajePromedio * ufAlmacenajePP;
+                costoTrad_UF += almacenajePromedio * ufAlmacenajeTrad;
+                costoMov_UF += (m.entradas + m.salidas) * ufMovimiento;
+
+                stockActual = stockFinal;
+            });
+
+            costoPP_UF += costoMov_UF;
+            costoTrad_UF += costoMov_UF;
+
+            const costoPP_CLP = costoPP_UF * ufValor;
+            const costoTrad_CLP = costoTrad_UF * ufValor;
+            const ahorroUF = costoTrad_UF - costoPP_UF;
             const ahorroCLP = costoTrad_CLP - costoPP_CLP;
-            const ahorroUF = costoTotalTrad - costoTotalPP;
 
-            const areaM2 = pallets / palletsPorM2;
-
-            // Mostrar resultados
             document.getElementById('resultado').innerHTML = `
-                <h3>Resultados:</h3>
-                <p><strong>Área requerida:</strong> ${areaM2.toFixed(2)} m²</p>
-                <p><strong>PalletParking:</strong> ${costoTotalPP.toFixed(2)} UF (~$${costoPP_CLP.toLocaleString('es-CL')} CLP)</p>
-                <p><strong>Tradicional:</strong> ${costoTotalTrad.toFixed(2)} UF (~$${costoTrad_CLP.toLocaleString('es-CL')} CLP)</p>
+                <h3>Resultados Totales:</h3>
+                <p><strong>PalletParking:</strong> ${costoPP_UF.toFixed(2)} UF (~$${costoPP_CLP.toLocaleString('es-CL')} CLP)</p>
+                <p><strong>Tradicional:</strong> ${costoTrad_UF.toFixed(2)} UF (~$${costoTrad_CLP.toLocaleString('es-CL')} CLP)</p>
                 <p><strong>Ahorro estimado:</strong> ${ahorroUF.toFixed(2)} UF (~$${ahorroCLP.toLocaleString('es-CL')} CLP)</p>
             `;
 
-            // Gráfico con Chart.js
+            let tablaHTML = `<table><thead><tr><th>Mes</th><th>Entradas</th><th>Salidas</th><th>Stock Final</th><th>Almacenaje Promedio</th></tr></thead><tbody>`;
+            resumen.forEach(r => {
+                tablaHTML += `<tr><td>${r.mes}</td><td>${r.entradas}</td><td>${r.salidas}</td><td>${r.stockFinal}</td><td>${r.promedio.toFixed(2)}</td></tr>`;
+            });
+            tablaHTML += `</tbody></table>`;
+            document.getElementById('tabla').innerHTML = tablaHTML;
+
             const ctx = document.getElementById('costChart').getContext('2d');
-            if (chartInstance) chartInstance.destroy(); // Eliminar gráfico anterior
+            if (chartInstance) chartInstance.destroy();
 
             chartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: ['PalletParking', 'Tradicional'],
-                    datasets: [{
-                        label: 'Costo en UF',
-                        data: [costoTotalPP.toFixed(2), costoTotalTrad.toFixed(2)],
-                        backgroundColor: ['#0078D7', '#FF5733']
-                    }]
+                    datasets: [{ label: 'Costo en UF', data: [costoPP_UF.toFixed(2), costoTrad_UF.toFixed(2)], backgroundColor: ['#0078D7', '#FF5733'] }]
                 },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: 'Comparación de Costos (UF)'
-                        }
-                    }
-                }
+                options: { responsive: true, plugins: { title: { display: true, text: 'Comparación de Costos (UF)' } } }
             });
         }
     </script>
